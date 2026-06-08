@@ -154,6 +154,18 @@ app.get('/stats', (req, res) => {
   });
 });
 
+// En load-balancer.js
+app.get('/metrics', (req, res) => {
+  let output = '';
+  for (const [url, s] of Object.entries(serviceStats)) {
+    const id = url.replace('http://localhost:', 'service_');
+    output += `lb_requests_total{service="${id}"} ${s.requests}\n`;
+    output += `lb_errors_total{service="${id}"} ${s.errors}\n`;
+    output += `lb_healthy{service="${id}"} ${s.healthy ? 1 : 0}\n`;
+  }
+  res.type('text/plain').send(output);
+});
+
 // Endpoint de salud del load balancer
 app.get('/health', (req, res) => {
   const healthyServices = services.filter(service => serviceStats[service].healthy);

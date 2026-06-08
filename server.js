@@ -35,7 +35,8 @@ app.get('/api/process', (req, res) => {
     });
   }
 
-  const processingTime = 3000;
+  //const processingTime = 3000;
+  const processingTime = Math.floor(Math.random() * 4000) + 500; // 500ms a 4500ms
 
   setTimeout(() => {
     activeRequests--;
