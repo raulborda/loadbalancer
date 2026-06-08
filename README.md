@@ -1,99 +1,132 @@
-# Sistema de Microservicios con Load Balancer
+# Load Balancer con Microservicios
 
-Un sistema simple de 6 microservicios con load balancer que distribuye las peticiones automáticamente.
+Simulación de un sistema de load balancing con 6 microservicios en Node.js. El balancer distribuye las peticiones usando Round Robin y monitorea la salud de cada servicio cada 10 segundos.
 
-## 🚀 Instalación
+## Arquitectura
 
-```bash
-npm install express axios
+```
+Cliente → Load Balancer (:3000) → service-3001
+                                → service-3002
+                                → service-3003
+                                → service-3004
+                                → service-3005
+                                → service-3006
 ```
 
-## 📁 Archivos
+## Archivos
 
-* **🧹 cleanup.js** - Limpia procesos que puedan estar corriendo en los puertos 3000-3010. Es como "apagar todo" antes de empezar.
-* **🚀 start-services.js** - Inicia todos los servicios de una vez. Levanta 6 microservicios (puertos 3001-3006) y después el load balancer.
-* **⚖️ load-balancer.js** - Recibe todas las peticiones en el puerto 3000 y las distribuye entre los 6 servicios usando Round Robin (va rotando).
-* **🔧 server.js** - Es el código de cada microservicio individual. Simula procesamiento y responde con información del servicio.
+| Archivo | Descripción |
+|---|---|
+| `start-services.js` | Levanta los 6 microservicios y el load balancer |
+| `load-balancer.js` | Recibe peticiones en `:3000` y las distribuye por Round Robin |
+| `server.js` | Código de cada microservicio individual |
+| `cleanup.js` | Mata procesos en los puertos 3000–3010 |
 
-## 🎯 Uso Rápido
-
-### 1. Limpiar procesos anteriores
+## Instalación
 
 ```bash
-node cleanup.js
+npm install
 ```
 
-### 2. Iniciar todo el sistema
+## Uso
+
+### Iniciar el sistema
 
 ```bash
 node start-services.js
 ```
 
-¡Listo! Ya tenemos:
-
-* 6 microservicios corriendo (puertos 3001-3006)
-* 1 load balancer (puerto 3000)
-
-## 🧪 Probar el Sistema
-
-### Hacer una petición
+Si hay procesos previos usando esos puertos:
 
 ```bash
-http://localhost:3000/api/process
+node cleanup.js && node start-services.js
 ```
 
-### Ver estadísticas
+### Detener
+
+`Ctrl+C` en la terminal donde corre `start-services.js`. Cierra todos los procesos limpiamente.
+
+## Endpoints
+
+### Load Balancer (puerto 3000)
 
 ```bash
-http://localhost:3000/stats
+# Petición balanceada
+curl http://localhost:3000/api/process
+
+# Estadísticas de uso por servicio
+curl http://localhost:3000/stats
+
+# Salud del sistema
+curl http://localhost:3000/health
 ```
 
-### Verificar salud del sistema
+### Microservicio individual (puertos 3001–3006)
 
 ```bash
-http://localhost:3000/health
+# Salud
+curl http://localhost:3001/health
+
+# Info detallada (memoria, uptime, stats)
+curl http://localhost:3001/info
 ```
 
-### Hacer múltiples peticiones para ver el balanceo
-
-```bash
-for i in {1..10}; do curl -s http://localhost:3000/api/process | jq .serviceId; done
-```
-
-## 📊 Lo que verás
-
-Cada petición nos va a mostrar algo como:
+## Respuesta de ejemplo
 
 ```json
 {
   "serviceId": "service-3002",
   "port": 3002,
+  "requestId": "req-4",
   "message": "Procesado por service-3002",
-  "processingTime": "234ms",
-  "timestamp": "2025-06-02T15:30:45.123Z"
+  "processingTime": "3000ms",
+  "totalTime": "3001ms",
+  "timestamp": "2026-06-08T12:00:00.000Z"
 }
 ```
 
-## 🛑 Detener el Sistema
+El load balancer agrega headers en cada respuesta:
 
-Presionar `Ctrl+C` en la terminal donde ejecutamos `start-services.js`
+```
+x-load-balancer: custom-lb
+x-service-used: http://localhost:3002
+x-request-id: req-4
+x-response-time: 3002ms
+```
 
-## ⚙️ Cómo Funciona
+## Ver el balanceo en acción
 
-1. **Load Balancer** recibe peticiones en puerto 3000
-2. **Round Robin** distribuye las peticiones entre servicios (3001→3002→3003→...)
-3. **Health Check** verifica cada 10 segundos que los servicios estén funcionando
-4. **Estadísticas** muestra el uso de cada servicio
+Peticiones secuenciales (muestra la rotación Round Robin):
 
-## 🔧 Personalización
+```bash
+for i in {1..6}; do curl -s http://localhost:3000/api/process | grep serviceId; done
+```
 
-* **Cambiar puertos** : Modifica el array `PORTS` en `start-services.js`
-* **Agregar servicios** : Añade más puertos al array
-* **Tiempo de procesamiento** : Modifica el random en `server.js`
+Peticiones en paralelo (simula carga concurrente):
 
-## 🐛 Solución de Problemas
+```bash
+for i in {1..6}; do curl -s http://localhost:3000/api/process & done; wait
+```
 
-* **Error "puerto ya en uso"** : Ejecutar `node cleanup.js`
-* **No responde** : Verificar que todos los servicios estén corriendo con `/health`
-* **Dependencias faltantes** : `npm install express axios`
-# loadbalancer
+## Simular errores
+
+Cada microservicio acepta una tasa de error via variable de entorno:
+
+```bash
+ERROR_RATE=0.3 node server.js 3001  # 30% de peticiones fallan con HTTP 500
+```
+
+## Personalización
+
+- **Agregar/quitar servicios:** modificar el array `PORTS` en `start-services.js` y la lista `services` en `load-balancer.js`
+- **Tiempo de respuesta:** modificar `processingTime` en `server.js` (actualmente fijo en 3000ms)
+- **Timeout del balancer:** modificar `timeout` en `load-balancer.js` (actualmente 5000ms)
+- **Intervalo de health check:** modificar el `setInterval` en `load-balancer.js` (actualmente cada 10s)
+
+## Solución de problemas
+
+| Error | Solución |
+|---|---|
+| Puerto ya en uso | `node cleanup.js` |
+| No responde | `curl http://localhost:3000/health` para ver qué servicios están caídos |
+| Dependencias faltantes | `npm install` |
