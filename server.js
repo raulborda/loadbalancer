@@ -1,68 +1,104 @@
 const express = require('express');
 const app = express();
 
-// Puerto viene como argumento o por defecto 3001
-const PORT = process.argv[2] || 3001;
+const PORT = parseInt(process.argv[2]) || 3001;
+if (isNaN(PORT) || PORT < 1 || PORT > 65535) {
+  console.error('Puerto inválido. Uso: node server.js <puerto>');
+  process.exit(1);
+}
+
 const SERVICE_ID = `service-${PORT}`;
+const ERROR_RATE = parseFloat(process.env.ERROR_RATE) || 0; // 0.0 - 1.0
+
+let requestCount = 0;
+let errorCount = 0;
+let activeRequests = 0;
 
 app.use(express.json());
 
-// Endpoint principal que simula procesamiento
 app.get('/api/process', (req, res) => {
+  requestCount++;
+  activeRequests++;
+  const requestId = req.headers['x-request-id'];
   const startTime = Date.now();
-  
-  // Simular algo de procesamiento (100-500ms random)
-  const processingTime = Math.floor(Math.random() * 400) + 100;
-  
+
+  // Simular error según tasa configurada
+  if (ERROR_RATE > 0 && Math.random() < ERROR_RATE) {
+    errorCount++;
+    activeRequests--;
+    return res.status(500).json({
+      serviceId: SERVICE_ID,
+      requestId,
+      error: 'Error simulado',
+      errorRate: ERROR_RATE,
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  const processingTime = 3000;
+
   setTimeout(() => {
-    const endTime = Date.now();
+    activeRequests--;
+    const totalTime = Date.now() - startTime;
     res.json({
       serviceId: SERVICE_ID,
       port: PORT,
+      requestId,
       message: `Procesado por ${SERVICE_ID}`,
       processingTime: `${processingTime}ms`,
-      timestamp: new Date().toISOString(),
-      totalTime: `${endTime - startTime}ms`
+      totalTime: `${totalTime}ms`,
+      timestamp: new Date().toISOString()
     });
   }, processingTime);
 });
 
-// Endpoint de health check
 app.get('/health', (req, res) => {
   res.json({
     status: 'healthy',
     serviceId: SERVICE_ID,
     port: PORT,
     uptime: process.uptime(),
+    activeRequests,
     timestamp: new Date().toISOString()
   });
 });
 
-
-// Endpoint para obtener info del servicio
 app.get('/info', (req, res) => {
   res.json({
     serviceId: SERVICE_ID,
     port: PORT,
     pid: process.pid,
     memory: process.memoryUsage(),
-    uptime: process.uptime()
+    uptime: process.uptime(),
+    stats: {
+      totalRequests: requestCount,
+      totalErrors: errorCount,
+      activeRequests,
+      errorRate: ERROR_RATE
+    }
   });
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`🚀 ${SERVICE_ID} corriendo en puerto ${PORT}`);
+  if (ERROR_RATE > 0) console.log(`   ⚠️  Error rate: ${(ERROR_RATE * 100).toFixed(0)}%`);
   console.log(`   Health: http://localhost:${PORT}/health`);
   console.log(`   Process: http://localhost:${PORT}/api/process`);
 });
 
-// Manejo de cierre graceful
-process.on('SIGTERM', () => {
-  console.log(`📴 ${SERVICE_ID} cerrando...`);
-  process.exit(0);
-});
+function gracefulShutdown(signal) {
+  console.log(`📴 ${SERVICE_ID} recibió ${signal}, cerrando (${activeRequests} requests activos)...`);
+  server.close(() => {
+    console.log(`✅ ${SERVICE_ID} cerrado limpiamente.`);
+    process.exit(0);
+  });
 
-process.on('SIGINT', () => {
-  console.log(`📴 ${SERVICE_ID} cerrando...`);
-  process.exit(0);
-});
+  // Forzar cierre si tarda más de 5s
+  setTimeout(() => {
+    console.warn(`⏰ ${SERVICE_ID} forzando cierre por timeout.`);
+    process.exit(1);
+  }, 5000);
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
